@@ -1,0 +1,40 @@
+{
+  "feature_cols": [
+    "Relative Humidity (%)",
+    "Max Temp (\u00b0C)",
+    "Min Temp (\u00b0C)",
+    "Wind Speed (m/s)",
+    "Avg Temperature (\u00b0C)",
+    "Solar Radiation",
+    "Precipitation (mm)",
+    "Drought Index (SPEI)",
+    "lat_sin",
+    "lat_cos",
+    "lon_sin",
+    "lon_cos",
+    "month_sin",
+    "month_cos",
+    "month",
+    "season",
+    "lat",
+    "lon",
+    "temp_range",
+    "heat_stress",
+    "precip_humidity",
+    "aridity_index",
+    "wind_evap",
+    "Wind Speed (m/s) (bins)"
+  ],
+  "category_classes": [
+    "Extremely Dry",
+    "Extremely Wet",
+    "Moderately Dry",
+    "Moderately Wet",
+    "Near Normal",
+    "Severely Dry",
+    "Severely Wet"
+  ],
+  "category_accuracy": 99.65,
+  "status_accuracy": 100.0,
+  "spei_mae": 0.0002
+}

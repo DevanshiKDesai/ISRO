@@ -1,0 +1,43 @@
+{
+  "coastal_states": [
+    "Odisha",
+    "West Bengal",
+    "Tamil Nadu",
+    "Andhra Pradesh",
+    "Kerala",
+    "Karnataka",
+    "Goa",
+    "Maharashtra",
+    "Gujarat"
+  ],
+  "hilly_states": [
+    "Himachal Pradesh",
+    "Uttarakhand",
+    "Arunachal Pradesh",
+    "Sikkim",
+    "Meghalaya",
+    "Manipur",
+    "Nagaland",
+    "Mizoram",
+    "Tripura",
+    "Assam"
+  ],
+  "dry_states": [
+    "Rajasthan",
+    "Haryana",
+    "Punjab",
+    "Delhi",
+    "Gujarat"
+  ],
+  "event_classes": [
+    "Cloudburst",
+    "Cyclone",
+    "Drought",
+    "Flood",
+    "Hailstorm",
+    "Heatwave",
+    "Landslide",
+    "Thunderstorm"
+  ],
+  "intensity_mae": 2.47
+}
