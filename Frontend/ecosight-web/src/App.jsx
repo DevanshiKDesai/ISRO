@@ -7,7 +7,9 @@ import './App.css';
 
 // --- VITE IMPORT FIX ---
 const Vapi = VapiModule.default || VapiModule;
-const vapi = new Vapi('de477f04-00bb-4f63-b117-0caf6192aef0'); 
+const vapi = new Vapi(import.meta.env.VITE_VAPI_API_KEY); 
+
+console.log("VAPI Initialized with API Key:", import.meta.env.VITE_VAPI_API_KEY);
 
 export default function App() {
   const [activeView, setActiveView] = useState('aggregate');
@@ -21,7 +23,8 @@ export default function App() {
       vapi.stop();
       setIsCallActive(false);
     } else {
-      vapi.start('f4d136c2-456f-4a2f-b6af-3d847d4b3aa1'); 
+      // Calling the dashboard bot directly. No overrides.
+      vapi.start(import.meta.env.VITE_VAPI_ASSISTANT); 
       setIsCallActive(true);
     }
   };
