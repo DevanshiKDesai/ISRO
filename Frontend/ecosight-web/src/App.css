@@ -226,3 +226,22 @@ body { background-color: var(--bg-base); color: var(--text-main); overflow: hidd
 .fab:hover { transform: translateY(-5px); filter: brightness(1.1); }
 .chat-fab { background-color: #3b82f6; }
 .voice-fab { background-color: #ef4444; }
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+.mic-active {
+  background-color: #ef4444; /* Bright Red */
+  color: white;
+  animation: pulse-ring 2s infinite;
+  border: 2px solid #ef4444;
+}
+
+.mic-inactive {
+  background-color: #3b82f6; /* Standard Blue */
+  color: white;
+  border: 2px solid transparent;
+}

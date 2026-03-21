@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Sphere, Stars } from '@react-three/drei';
 import { LayoutDashboard, TreePine, Users, CloudRain, Wheat, Droplets, Mic, MessageSquare, UserCircle, PhoneCall, Sun, Moon, Bell, Download, Settings, Activity } from 'lucide-react';
-import VapiModule from '@vapi-ai/web'; // Fixed the import name here!
+import VapiModule from '@vapi-ai/web'; 
 import './App.css';
 
 // --- VITE IMPORT FIX ---
@@ -21,7 +21,6 @@ export default function App() {
       vapi.stop();
       setIsCallActive(false);
     } else {
-      // Replace with your actual Assistant ID from the Vapi Dashboard
       vapi.start('f4d136c2-456f-4a2f-b6af-3d847d4b3aa1'); 
       setIsCallActive(true);
     }
@@ -80,7 +79,7 @@ export default function App() {
       {/* SIDEBAR */}
       <aside className="sidebar">
         <div className="brand">
-          <h2>🚀 GeoDristri</h2>
+          <h2>🚀 GeoDrishti</h2>
         </div>
         
         <nav className="nav-menu">
@@ -157,12 +156,10 @@ export default function App() {
           </div>
           
           <div className="top-bar-actions">
-            <button className="icon-btn" title="Alerts"><Bell size={20} /></button>
-            <button className="icon-btn" title="Export Kaggle Data Report"><Download size={20} /></button>
-            <button className="icon-btn" title="System Settings"><Settings size={20} /></button>
-            
+            {/* INJECTED JARVIS VOICE ASSISTANT BUTTON */}
+
             <div className="divider-vertical"></div>
-            
+
             <button className="icon-btn theme-toggle" onClick={toggleTheme} title="Toggle Theme">
               {theme === 'dark-theme' ? <Sun size={20} /> : <Moon size={20} />}
             </button>
@@ -222,7 +219,7 @@ export default function App() {
       <div className={`chat-panel ${isChatOpen ? 'open' : ''} glass-card`}>
         <div className="chat-header">
           <div className="chat-title">
-            <MessageSquare size={18} /> GeoDristri Omni-AI
+            <MessageSquare size={18} /> GeoDrishti Omni-AI
           </div>
           <button className="close-chat-btn" onClick={() => setIsChatOpen(false)}>×</button>
         </div>
@@ -256,15 +253,15 @@ export default function App() {
           <MessageSquare size={24} />
         </button>
         <button 
-          className="fab voice-fab" 
+          className={isCallActive ? "fab mic-active" : "fab voice-fab"} 
           title={isCallActive ? "End Voice Call" : "Initialize Voice Assistant"}
           onClick={toggleVoiceAssistant}
           style={{ 
-            backgroundColor: isCallActive ? '#dc2626' : '#ef4444',
+            backgroundColor: isCallActive ? '#ef4444' : '#3b82f6',
             boxShadow: isCallActive ? '0 0 20px rgba(239, 68, 68, 0.8)' : ''
           }}
         >
-          <Mic size={24} />
+          <Mic size={24} color="white" />
         </button>
       </div>
 

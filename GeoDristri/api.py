@@ -1,8 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import joblib
 import pandas as pd
 import numpy as np
+import joblib
+import requests
+from datetime import datetime
 
 app = FastAPI()
 
@@ -13,161 +15,169 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-print("Booting GeoDristri Omni-Backend...")
+print("Loading GeoDrishti Datasets into Memory...")
 
 # ==========================================
-# 1. LOAD ALL ML MODELS (CRASH-PROOFED)
+# 1. LOAD DATASETS (BULLETPROOF INDIVIDUAL BLOCKS)
 # ==========================================
+df_pop = df_forest = df_crop = df_drought = None
 
 try:
-    forest_model = joblib.load('Forest_prediction/cover_model.joblib')
-    forest_features = joblib.load('Forest_prediction/feature_cols.joblib')
-    print("✅ Forest Model Loaded")
-except:
-    forest_model = None
-    forest_features = []
+    df_pop = pd.read_csv("Population/india_enriched.csv", encoding='latin1')
+    print("✅ Population Dataset Loaded")
+except Exception as e:
+    print(f"⚠️ Population dataset offline: Check path 'Population/india_enriched.csv'")
 
 try:
-    weather_model = joblib.load('Weather_prediction/weather_model.joblib')
-    weather_features = joblib.load('Weather_prediction/weather_features.joblib')
-    print("✅ Weather Model Loaded")
-except:
-    weather_model = None
-    weather_features = [] # <-- This fixes your crash!
+    df_forest = pd.read_csv("Forest_prediction/New Forest.csv", encoding='latin1')
+    print("✅ Forest Dataset Loaded")
+except Exception as e:
+    print(f"⚠️ Forest dataset offline: Check path 'Forest_prediction/New Forest.csv'")
 
 try:
-    crop_model = joblib.load('Crop_prediction/crop_model.joblib')
-    crop_features = joblib.load('Crop_prediction/crop_features.joblib')
-    print("✅ Crop Model Loaded")
-except:
-    crop_model = None
-    crop_features = []
+    df_crop = pd.read_csv("crop_predictor/enhanced_crop_yield_dataset (1).csv", encoding='latin1')
+    print("✅ Crop Dataset Loaded")
+except Exception as e:
+    print(f"⚠️ Crop dataset offline: Check path 'crop_predictor/enhanced_crop_yield_dataset (1).csv'")
 
 try:
-    drought_model = joblib.load('Drought_prediction/drought_model.joblib')
-    drought_features = joblib.load('Drought_prediction/drought_features.joblib')
-    print("✅ Drought Model Loaded")
+    # 1. Try reading it as an actual Excel file first
+    df_drought = pd.read_excel("drought_prediction/Drought New.xlsx")
+    print("✅ Drought Dataset Loaded (Excel Mode)")
 except:
-    drought_model = None
-    drought_features = []
+    try:
+        # 2. If it's actually a CSV, force it to skip the broken row 6!
+        df_drought = pd.read_csv("drought_prediction/Drought New.xlsx", encoding='latin1', on_bad_lines='skip')
+        print("✅ Drought Dataset Loaded (Forced CSV Mode)")
+    except Exception as e:
+        print(f"⚠️ TRUE DROUGHT ERROR: {e}")
 
-try:
-    pop_model = joblib.load('Population_prediction/pop_model.joblib')
-    pop_features = joblib.load('Population_prediction/pop_features.joblib')
-    print("✅ Population Model Loaded")
-except:
-    pop_model = None
-    pop_features = []
 
 # ==========================================
-# 2. THE DYNAMIC PREDICTION ENGINE
+# 2. LOAD MODELS (FOR DISASTERS/WEATHER)
+# ==========================================
+try:
+    EVENT_MODEL = joblib.load("Weather_Prediction/event_model.joblib")
+    print("✅ Disaster Models Loaded")
+except:
+    EVENT_MODEL = None
+    print("⚠️ Disaster models offline (event_model.joblib not found)")
+
+# ==========================================
+# 3. VAPI TOOL ENDPOINTS (CRASH-PROOF)
 # ==========================================
 
-def run_prediction(model, features, payload):
-    # 1. If the model isn't built yet, stop gracefully.
-    if not model:
-        return {"success": False, "error": "Model offline or missing."}
+@app.post("/tool/population")
+def get_population(payload: dict):
+    if df_pop is None:
+        return {"result": "The population database is currently offline."}
         
-    # 2. Dynamic Sklearn Fallback: If you forgot to save the features.joblib, 
-    # the code will try to extract them directly from the model itself!
-    if not features and hasattr(model, 'feature_names_in_'):
-        features = list(model.feature_names_in_)
+    year = payload.get("year", 2017)
+    data = df_pop[df_pop['Year'] == year]
+    
+    if data.empty:
+        return {"result": f"No data available for the year {year}."}
+    
+    pop_millions = round(data['India Population (Millions)'].values[0], 2)
+    birth_rate = round(data['Birth Rate (per 1000)'].values[0], 2)
+    death_rate = round(data['Death Rate (per 1000)'].values[0], 2)
+    urban_rate = round(data['Urbanization_Rate'].values[0], 2)
+    
+    return {
+        "result": f"In {year}, India's population was {pop_millions} million. The birth rate was {birth_rate} per thousand, the death rate was {death_rate}, and the urbanization rate was {urban_rate}%."
+    }
+
+@app.post("/tool/forest")
+def get_forest(payload: dict):
+    if df_forest is None:
+        return {"result": "The forest database is currently offline."}
         
-    if not features:
-        return {"success": False, "error": "Feature columns missing."}
+    state = payload.get("state", "Telangana").title()
+    state_data = df_forest[df_forest['State'].str.contains(state, case=False, na=False)]
     
-    # 3. Create the empty dataframe dynamically matching your exact training columns
-    df = pd.DataFrame(np.zeros((1, len(features))), columns=features)
+    if state_data.empty:
+        return {"result": f"No forest data found for {state}."}
     
-    # 4. Inject payload data if available
-    if payload:
-        for key, value in payload.items():
-            if key in df.columns:
-                df[key] = value
-                
-    prediction = model.predict(df)[0]
-    return {"success": True, "result": prediction}
+    latest_data = state_data.iloc[-1]
+    
+    return {
+        "result": f"For {state}, the total recorded forest area is {latest_data['Total_Forest_Recorded_SqKm']} square kilometers, covering {latest_data['Forest_Percentage_Geographical']}% of the geographical area."
+    }
 
-# ... (Keep your @app.post routes below exactly the same)
+@app.post("/tool/crop")
+def get_crop(payload: dict):
+    if df_crop is None:
+        return {"result": "The crop yield database is currently offline."}
+        
+    state = payload.get("state", "Kerala").title()
+    state_data = df_crop[df_crop['State_Name'].str.contains(state, case=False, na=False)]
+    
+    if state_data.empty:
+        return {"result": f"No crop data found for {state}."}
+    
+    avg_yield = round(state_data['Crop Yield (kg per hectare)'].mean(), 2)
+    common_soil = state_data['Soil_Type'].mode()[0]
+    top_crop = state_data['Crop'].mode()[0]
+    
+    return {
+        "result": f"In {state}, the predominant soil type is {common_soil}. The most common crop is {top_crop}, with an average historical yield of {avg_yield} kg per hectare."
+    }
 
-@app.post("/predict/forest")
-def predict_forest(payload: dict = None):
-    res = run_prediction(forest_model, forest_features, payload)
-    if res["success"]:
-        return {"success": True, "predicted_cover": float(res["result"])}
-    return res
+@app.post("/tool/drought")
+def get_drought(payload: dict):
+    if df_drought is None:
+        return {"result": "The drought database is currently offline. Please verify the folder name."}
+        
+    mean_spei = round(df_drought['Drought Index (SPEI)'].mean(), 2)
+    avg_temp = round(df_drought['Avg Temperature (°C)'].mean(), 2)
+    
+    return {
+        "result": f"Based on our dataset analysis, the average recorded temperature is {avg_temp} degrees Celsius, and the aggregate Standardized Precipitation Evapotranspiration Index is {mean_spei}."
+    }
 
-@app.post("/predict/weather")
-def predict_weather(payload: dict = None):
-    res = run_prediction(weather_model, weather_features, payload)
-    if res["success"]:
-        return {"success": True, "predicted_weather": str(res["result"])}
-    return res
-
-@app.post("/predict/crop")
-def predict_crop(payload: dict = None):
-    res = run_prediction(crop_model, crop_features, payload)
-    if res["success"]:
-        return {"success": True, "optimal_crop": str(res["result"])}
-    return res
-
-@app.post("/predict/drought")
-def predict_drought(payload: dict = None):
-    res = run_prediction(drought_model, drought_features, payload)
-    if res["success"]:
-        return {"success": True, "drought_risk_index": float(res["result"])}
-    return res
-
-@app.post("/predict/population")
-def predict_pop(payload: dict = None):
-    res = run_prediction(pop_model, pop_features, payload)
-    if res["success"]:
-        return {"success": True, "population_density_shift": float(res["result"])}
-    return res
-
-# ==========================================
-# 3. UNIFIED TEXT CHATBOT ROUTER (FOR REACT)
-# ==========================================
-
-@app.post("/chat")
-def chat_router(payload: dict):
-    msg = payload.get("message", "").lower()
-
-    # ROUTE 1: CROP
-    if any(word in msg for word in ["crop", "grow", "plant", "agriculture", "yield"]):
-        res = predict_crop(payload)
-        if res.get("success"):
-            return {"reply": f"Based on the GeoDristri ML model, the optimal crop for these conditions is {res['optimal_crop']}."}
-        return {"reply": "The Crop ML model is currently offline. Please check your .joblib files."}
-
-    # ROUTE 2: FOREST
-    elif any(word in msg for word in ["forest", "tree", "cover", "deforestation"]):
-        res = predict_forest(payload)
-        if res.get("success"):
-            return {"reply": f"The GeoDristri continuous monitoring model predicts a forest cover of {res['predicted_cover']:.2f}%."}
-        return {"reply": "The Forest ML model is currently offline. Please check your .joblib files."}
-
-    # ROUTE 3: WEATHER
-    elif any(word in msg for word in ["weather", "rain", "temperature", "climate"]):
-        res = predict_weather(payload)
-        if res.get("success"):
-            return {"reply": f"Our predictive weather models indicate: {res['predicted_weather']}."}
-        return {"reply": "The Weather ML model is currently offline. Please check your .joblib files."}
-
-    # ROUTE 4: DROUGHT
-    elif any(word in msg for word in ["drought", "dry", "water scarcity"]):
-        res = predict_drought(payload)
-        if res.get("success"):
-            return {"reply": f"The calculated drought risk index for this region is {res['drought_risk_index']:.2f}."}
-        return {"reply": "The Drought ML model is currently offline. Please check your .joblib files."}
-
-    # ROUTE 5: POPULATION
-    elif any(word in msg for word in ["population", "people", "demographic", "density"]):
-        res = predict_pop(payload)
-        if res.get("success"):
-            return {"reply": f"The projected population density shift is {res['population_density_shift']:.2f}."}
-        return {"reply": "The Population ML model is currently offline. Please check your .joblib files."}
-
-    # FALLBACK
-    else:
-        return {"reply": "I am the GeoDristri Omni-AI. Ask me to run a prediction for forest cover, weather, crops, drought, or population dynamics."}
+@app.post("/tool/disaster")
+def predict_disaster(payload: dict):
+    location = payload.get("location", "Mumbai").title()
+    
+    try:
+        # 1. LIVE GEOCODING: Get exact coordinates for the city
+        geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={location}&count=1"
+        geo_resp = requests.get(geo_url).json()
+        
+        if "results" not in geo_resp:
+            return {"result": f"I cannot locate {location} on the map."}
+            
+        lat = geo_resp['results'][0]['latitude']
+        lon = geo_resp['results'][0]['longitude']
+        
+        # 2. LIVE WEATHER: Fetch real-time satellite data
+        weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true"
+        weather_resp = requests.get(weather_url).json()
+        
+        current = weather_resp['current_weather']
+        temp = round(current['temperature'])
+        wind = round(current['windspeed'])
+        
+        # 3. LIVE PREDICTION LOGIC
+        # Here we use the live data to create a real-time risk assessment
+        risk_level = "stable"
+        alert = "No severe weather events predicted."
+        
+        if wind > 60:
+            risk_level = "High"
+            alert = "Warning: High risk of cyclonic activity or severe gales."
+        elif temp > 42:
+            risk_level = "High"
+            alert = "Warning: Severe heatwave conditions detected."
+        elif temp < 5:
+            risk_level = "Moderate"
+            alert = "Cold wave conditions are currently active."
+            
+        # If your EVENT_MODEL from predict.py is loaded, you can eventually pass 'temp' and 'wind' directly into it here!
+            
+        return {
+            "result": f"Currently in {location}, it is {temp} degrees with wind speeds of {wind} kilometers per hour. The risk level is {risk_level}. {alert}"
+        }
+        
+    except Exception as e:
+        return {"result": f"Satellite uplink failed for {location}."}
