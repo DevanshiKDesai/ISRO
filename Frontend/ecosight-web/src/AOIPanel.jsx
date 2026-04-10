@@ -265,6 +265,7 @@ export default function AOIPanel({ currentUser, onAlertTriggered, theme }) {
 
             <div className="aoi-tabs">
               <button className={`aoi-tab ${activeTab==='indices'?'active':''}`} onClick={()=>setActiveTab('indices')}>Indices</button>
+              <button className={`aoi-tab ${activeTab==='predictions'?'active':''}`} onClick={()=>setActiveTab('predictions')}>Predictions</button>
               <button className={`aoi-tab ${activeTab==='fields'?'active':''}`} onClick={()=>setActiveTab('fields')}>
                 All Fields {Object.values(loadingFields).some(Boolean) && <Loader size={10} className="spin" style={{marginLeft:4}}/>}
               </button>
@@ -297,6 +298,81 @@ export default function AOIPanel({ currentUser, onAlertTriggered, theme }) {
                 </div>
                 <div className="aoi-source-note"><Info size={10}/>{(analysis.data_sources||[]).join(' · ')}</div>
               </>
+            )}
+
+            {activeTab==='predictions' && (
+              <div className="predictions-list">
+                {/* Crop Predictions */}
+                {analysis.predictions?.crop && !analysis.predictions.crop.error && (
+                  <div className="prediction-block" style={{borderLeftColor:'#f59e0b'}}>
+                    <div className="prediction-header" style={{color:'#f59e0b'}}>
+                      <Wheat size={13}/> Crop Yield Prediction
+                    </div>
+                    <div className="prediction-content">
+                      {analysis.predictions.crop.predictions?.slice(0,3).map((p,i)=>(
+                        <div key={i} className="crop-pred-item">
+                          <span className="crop-name">{p.crop}</span>
+                          <span className="crop-conf">{p.confidence}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Forest Predictions */}
+                {analysis.predictions?.forest && !analysis.predictions.forest.error && (
+                  <div className="prediction-block" style={{borderLeftColor:'#10b981'}}>
+                    <div className="prediction-header" style={{color:'#10b981'}}>
+                      <TreePine size={13}/> Forest Health Prediction
+                    </div>
+                    <div className="prediction-content">
+                      <div className="forest-metrics">
+                        <div>Alert Level: {['No Alert','Mild','Severe','Critical'][analysis.predictions.forest.alert_level] || 'N/A'}</div>
+                        <div>Future NDVI: {analysis.predictions.forest.future_ndvi}</div>
+                        <div>Future Cover: {analysis.predictions.forest.future_cover_sqkm} km²</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Drought Predictions */}
+                {analysis.predictions?.drought && !analysis.predictions.drought.error && (
+                  <div className="prediction-block" style={{borderLeftColor:'#ef4444'}}>
+                    <div className="prediction-header" style={{color:'#ef4444'}}>
+                      <Droplets size={13}/> Drought Risk Prediction
+                    </div>
+                    <div className="prediction-content">
+                      <div className="drought-metrics">
+                        <div>Category: {analysis.predictions.drought.category}</div>
+                        <div>Status: {analysis.predictions.drought.status ? 'Drought' : 'Normal'}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Population Predictions */}
+                {analysis.predictions?.population && !analysis.predictions.population.error && (
+                  <div className="prediction-block" style={{borderLeftColor:'#3b82f6'}}>
+                    <div className="prediction-header" style={{color:'#3b82f6'}}>
+                      <Users size={13}/> Urbanization Prediction
+                    </div>
+                    <div className="prediction-content">
+                      <div className="pop-metrics">
+                        <div>Future Pop: {analysis.predictions.population.future_population_millions}M</div>
+                        <div>Urban Rate: {analysis.predictions.population.future_urbanization_rate}%</div>
+                        <div>Growth Rate: {analysis.predictions.population.growth_rate}%</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {(!analysis.predictions || Object.values(analysis.predictions).every(p=>p.error)) && (
+                  <div className="prediction-error">
+                    <Info size={14} style={{color:'var(--text-dim)'}}/>
+                    ML models not loaded or prediction failed.
+                  </div>
+                )}
+              </div>
             )}
 
             {activeTab==='fields' && (

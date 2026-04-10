@@ -141,7 +141,7 @@ function ChatPanel({ isOpen, onClose }) {
   const [input,setInput]       = useState('');
   const [messages,setMessages] = useState([{
     role:'system',
-    content:'**GeoDrishti Omni-AI** — real data only.\n\nI use:\n• Live weather (Open-Meteo)\n• NASA POWER vegetation proxy\n• Your ML model (event_model.joblib)\n• Forest / Crop / Drought / Population datasets\n\nAsk me anything — if I\'m unsure I\'ll tell you exactly what I do know.'
+    content:'**GeoDrishti Omni-AI** — ML-powered predictions.\n\nI use trained ML models for:\n• Disaster risk\n• Crop yield predictions\n• Forest/deforestation alerts\n• Drought analysis\n• Urbanization forecasts\n\nPlus live weather & satellite data. Ask me anything!'
   }]);
   const [loading,setLoading] = useState(false);
   const bottomRef = useRef(null); const inputRef = useRef(null);
