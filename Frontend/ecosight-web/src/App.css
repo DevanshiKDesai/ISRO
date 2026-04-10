@@ -558,6 +558,17 @@ body { font-family: var(--font-body); background: var(--bg-base); color: var(--t
 .field-block-content { font-size:0.8rem; color:var(--text-muted); line-height:1.65; }
 .field-block-content strong { color:var(--text-main); }
 
+/* ── PREDICTIONS LIST ── */
+.predictions-list { display:flex; flex-direction:column; gap:10px; overflow-y:auto; flex:1; min-height:0; }
+.prediction-block { background:var(--bg-input); border:1px solid var(--border); border-left:3px solid; border-radius:var(--radius-sm); padding:12px 14px; flex-shrink:0; }
+.prediction-header { display:flex; align-items:center; gap:7px; font-size:0.72rem; font-weight:700; font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:8px; }
+.prediction-content { font-size:0.8rem; color:var(--text-muted); line-height:1.65; }
+.crop-pred-item { display:flex; justify-content:space-between; margin-bottom:4px; }
+.crop-name { font-weight:600; }
+.crop-conf { color:var(--accent); font-weight:700; }
+.forest-metrics, .drought-metrics, .pop-metrics { display:flex; flex-direction:column; gap:3px; }
+.prediction-error { display:flex; align-items:center; gap:6px; padding:12px; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text-dim); font-size:0.8rem; }
+
 /* Leaflet dark-mode overrides */
 .dark-theme .leaflet-control-zoom a,
 .dark-theme .leaflet-draw-toolbar a { background:#0d1526 !important; color:#e8edf5 !important; border-color:#1e293b !important; }

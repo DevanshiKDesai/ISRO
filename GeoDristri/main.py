@@ -45,6 +45,53 @@ try:
     EVENT_MODEL = joblib.load("Weather_Prediction/event_model.joblib"); print("✅ Event Model")
 except Exception as e: print(f"⚠️  Event model: {e}")
 
+# Load additional ML models for predictions
+CROP_MODEL = FOREST_MODELS = DROUGHT_MODELS = POP_MODELS = None
+try:
+    # Crop prediction
+    CROP_MODEL = {
+        'model': joblib.load("crop_predictor/model.joblib"),
+        'encoders': joblib.load("crop_predictor/encoders.joblib"),
+        'target_encoder': joblib.load("crop_predictor/target_encoder.joblib"),
+        'feature_cols': joblib.load("crop_predictor/feature_cols.joblib")
+    }; print("✅ Crop Model")
+except Exception as e: print(f"⚠️  Crop model: {e}")
+
+try:
+    # Forest prediction
+    FOREST_MODELS = {
+        'alert': joblib.load("Forest_prediction/alert_model.joblib"),
+        'ndvi': joblib.load("Forest_prediction/ndvi_model.joblib"),
+        'cover': joblib.load("Forest_prediction/cover_model.joblib"),
+        'aqi': joblib.load("Forest_prediction/aqi_model.joblib"),
+        'human': joblib.load("Forest_prediction/human_model.joblib"),
+        'state_encoder': joblib.load("Forest_prediction/state_encoder.joblib"),
+        'feature_cols': joblib.load("Forest_prediction/feature_cols.joblib")
+    }; print("✅ Forest Models")
+except Exception as e: print(f"⚠️  Forest models: {e}")
+
+try:
+    # Drought prediction
+    DROUGHT_MODELS = {
+        'category': joblib.load("drought_prediction/category_model.joblib"),
+        'status': joblib.load("drought_prediction/status_model.joblib"),
+        'category_encoder': joblib.load("drought_prediction/category_encoder.joblib"),
+        'feature_cols': joblib.load("drought_prediction/feature_cols.joblib")
+    }; print("✅ Drought Models")
+except Exception as e: print(f"⚠️  Drought models: {e}")
+
+try:
+    # Population/Urbanization prediction
+    POP_MODELS = {
+        'pop': joblib.load("Population/pop_model.joblib"),
+        'urb': joblib.load("Population/urb_model.joblib"),
+        'infra': joblib.load("Population/infra_model.joblib"),
+        'upop': joblib.load("Population/upop_model.joblib"),
+        'grow': joblib.load("Population/grow_model.joblib"),
+        'feature_cols': joblib.load("Population/feature_cols.joblib")
+    }; print("✅ Population Models")
+except Exception as e: print(f"⚠️  Population models: {e}")
+
 class ChatRequest(BaseModel):
     message: str
 
@@ -125,6 +172,129 @@ def send_alert_email(to_email, aoi_name, level, summary, coords):
             s.sendmail(ALERT_FROM,to_email,msg.as_string())
         return True
     except Exception as e: print(f"Email failed: {e}"); return False
+
+# ── ML Prediction Functions ──────────────────────────────────────────────────
+
+def predict_crop(lat, lon):
+    if not CROP_MODEL: return {"error": "Crop model not loaded"}
+    try:
+        # Get weather data
+        weather = live_weather(lat, lon)
+        cw = weather.get("current_weather", {})
+        temp = cw.get("temperature", 25)
+        wind = cw.get("windspeed", 10)
+        daily = weather.get("daily", {})
+        precip = sum(daily.get("precipitation_sum", [0])) or 0
+
+        # Get altitude (simplified)
+        altitude = 350  # fallback
+
+        # Get soil (simplified)
+        soil = {"pH": 6.8, "Organic_Carbon": 0.8, "Soil_Moisture": 38}
+
+        # Get state (simplified reverse geocode)
+        state = "Maharashtra"  # fallback
+
+        # Season
+        from datetime import datetime
+        month = datetime.now().month
+        season = "Kharif" if month in [6,7,8,9,10] else "Rabi"
+
+        features = {
+            "State_Name": state, "Season": season,
+            "N": 68, "P": 53, "K": 78,
+            "Soil_Type": "Neutral", "Irrigation_Method": "Rainfed", "Soil_Texture": "Loamy",
+            "Fertilizer_Used_kg": 120, "Pesticide_Usage_kg": 10,
+            "temperature": temp, "rainfall": precip * 365 / 7, "humidity": 60,
+            "Wind_speed": wind, "Sunshine_hours": 8,
+            "Altitude_m": altitude, **soil
+        }
+
+        # Encode and predict
+        for col in ['State_Name', 'Season', 'Soil_Type', 'Irrigation_Method', 'Soil_Texture']:
+            le = CROP_MODEL['encoders'][col]
+            val = features.get(col, le.classes_[0])
+            features[col] = int(le.transform([val])[0]) if val in le.classes_ else 0
+
+        X = np.array([[features.get(col, 0) for col in CROP_MODEL['feature_cols']]])
+        probs = CROP_MODEL['model'].predict_proba(X)[0]
+        top5_idx = np.argsort(probs)[::-1][:5]
+        predictions = []
+        for idx in top5_idx:
+            crop = CROP_MODEL['target_encoder'].inverse_transform([idx])[0]
+            confidence = round(probs[idx] * 100, 1)
+            predictions.append({"crop": crop, "confidence": confidence})
+        return {"predictions": predictions}
+    except Exception as e: return {"error": str(e)}
+
+def predict_forest(lat, lon):
+    if not FOREST_MODELS: return {"error": "Forest models not loaded"}
+    try:
+        # Simplified features
+        features = {"lat": lat, "lon": lon, "temperature": 25, "precipitation": 50, "population_density": 100}
+        X = np.array([[features.get(col, 0) for col in FOREST_MODELS['feature_cols']]])
+
+        alert_pred = FOREST_MODELS['alert'].predict(X)[0]
+        ndvi_pred = FOREST_MODELS['ndvi'].predict(X)[0]
+        cover_pred = FOREST_MODELS['cover'].predict(X)[0]
+        aqi_pred = FOREST_MODELS['aqi'].predict(X)[0]
+        human_pred = FOREST_MODELS['human'].predict(X)[0]
+
+        return {
+            "alert_level": int(alert_pred),
+            "future_ndvi": round(float(ndvi_pred), 3),
+            "future_cover_sqkm": round(float(cover_pred), 2),
+            "aqi_impact": round(float(aqi_pred), 2),
+            "human_impact": round(float(human_pred), 2)
+        }
+    except Exception as e: return {"error": str(e)}
+
+def predict_drought(lat, lon):
+    if not DROUGHT_MODELS: return {"error": "Drought models not loaded"}
+    try:
+        # Get weather
+        weather = live_weather(lat, lon)
+        cw = weather.get("current_weather", {})
+        temp = cw.get("temperature", 25)
+        wind = cw.get("windspeed", 10)
+        daily = weather.get("daily", {})
+        precip = sum(daily.get("precipitation_sum", [0])) or 0
+
+        features = {"temperature": temp, "humidity": 60, "precipitation": precip, "wind_speed": wind, "solar_radiation": 200}
+        X = np.array([[features.get(col, 0) for col in DROUGHT_MODELS['feature_cols']]])
+
+        category_pred = DROUGHT_MODELS['category'].predict(X)[0]
+        status_pred = DROUGHT_MODELS['status'].predict(X)[0]
+
+        category_label = DROUGHT_MODELS['category_encoder'].inverse_transform([category_pred])[0]
+
+        return {
+            "category": category_label,
+            "status": bool(status_pred)
+        }
+    except Exception as e: return {"error": str(e)}
+
+def predict_population(lat, lon):
+    if not POP_MODELS: return {"error": "Population models not loaded"}
+    try:
+        # Simplified features
+        features = {"lat": lat, "lon": lon, "current_population": 10, "urban_rate": 30, "year": 2023}
+        X = np.array([[features.get(col, 0) for col in POP_MODELS['feature_cols']]])
+
+        pop_pred = POP_MODELS['pop'].predict(X)[0]
+        urb_pred = POP_MODELS['urb'].predict(X)[0]
+        infra_pred = POP_MODELS['infra'].predict(X)[0]
+        upop_pred = POP_MODELS['upop'].predict(X)[0]
+        grow_pred = POP_MODELS['grow'].predict(X)[0]
+
+        return {
+            "future_population_millions": round(float(pop_pred), 2),
+            "future_urbanization_rate": round(float(urb_pred), 2),
+            "future_urban_population_millions": round(float(upop_pred), 2),
+            "infrastructure_pressure": round(float(infra_pred), 2),
+            "growth_rate": round(float(grow_pred), 2)
+        }
+    except Exception as e: return {"error": str(e)}
 
 INTENT_MAP = {
     "weather":    ["weather","temperature","rain","forecast","wind","cyclone","heatwave","cold","hot","humid","climate"],
@@ -213,75 +383,60 @@ def chat_disaster(msg):
     except Exception as e: return f"Live data unavailable for {loc}. ({e})"
 
 def chat_forest(msg):
-    if df_forest is None:
-        return "Forest dataset offline.\nFor live data: **FSI** (fsi.nic.in) publishes annual forest reports."
-    state = extract_loc(msg)
-    rows  = df_forest[df_forest['State'].str.contains(state, case=False, na=False)]
-    if rows.empty:
-        avail = ", ".join(sorted(df_forest['State'].dropna().unique()[:10]))
-        return f"No data for **{state}**.\nAvailable: {avail}.\nOr check fsi.nic.in for other regions."
-    row=rows.iloc[-1]
-    try:
-        pct = float(str(row['Forest_Percentage_Geographical']).replace('%','').strip())
-        note = "Above national avg (21.7%)" if pct>25 else "Below national avg (21.7%)" if pct<18 else "Near national avg (21.7%)"
-    except: note=""
-    return (f"**Forest cover — {state}** (FSI-derived dataset):\n"
-            f"• Area: **{row['Total_Forest_Recorded_SqKm']} km²**\n"
-            f"• Coverage: **{row['Forest_Percentage_Geographical']}%** — {note}\n"
-            f"• Source: GeoDrishti Forest dataset (static).\n• Latest reports: fsi.nic.in")
+    loc = extract_loc(msg)
+    lat, lon = geocode(loc)
+    if lat is None: return f"Couldn't locate **{loc}**. Try: 'forest cover in Maharashtra'."
+    pred = predict_forest(lat, lon)
+    if 'error' in pred:
+        return f"Forest prediction failed: {pred['error']}\nFallback: Check fsi.nic.in for static reports."
+    return (f"**Forest prediction — {loc}** (ML model):\n"
+            f"• Alert Level: **{['No Alert','Mild','Severe','Critical'][pred.get('alert_level',0)]}**\n"
+            f"• Future NDVI: **{pred.get('future_ndvi', 'N/A')}**\n"
+            f"• Future Cover: **{pred.get('future_cover_sqkm', 'N/A')} km²**\n"
+            f"• AQI Impact: **{pred.get('aqi_impact', 'N/A')}**\n"
+            f"• Human Impact: **{pred.get('human_impact', 'N/A')}**\n"
+            f"• Source: Trained forest ML models.\n• Live data: fsi.nic.in")
 
 def chat_crop(msg):
-    if df_crop is None:
-        return "Crop dataset offline.\nLive mandi prices: agmarknet.gov.in"
-    state = extract_loc(msg)
-    rows  = df_crop[df_crop['State_Name'].str.contains(state, case=False, na=False)]
-    if rows.empty:
-        avail = ", ".join(sorted(df_crop['State_Name'].dropna().unique()[:10]))
-        return f"No crop data for **{state}**.\nAvailable: {avail}.\nAlso: pmfby.gov.in"
-    avg  = round(rows['Crop Yield (kg per hectare)'].mean(),2)
-    soil = rows['Soil_Type'].mode()[0] if 'Soil_Type' in rows.columns else "N/A"
-    crop = rows['Crop'].mode()[0]      if 'Crop'      in rows.columns else "N/A"
-    top5 = rows['Crop'].value_counts().head(5).index.tolist() if 'Crop' in rows.columns else []
-    return (f"**Crop data — {state}** (GeoDrishti dataset):\n"
-            f"• Top crop: **{crop}**\n• Top 5: {', '.join(top5)}\n"
-            f"• Soil: **{soil}**\n• Avg yield: **{avg} kg/ha**\n"
-            f"• Source: Historical dataset (static).\n• Live prices: agmarknet.gov.in")
+    loc = extract_loc(msg)
+    lat, lon = geocode(loc)
+    if lat is None: return f"Couldn't locate **{loc}**. Try: 'crop yield in Punjab'."
+    pred = predict_crop(lat, lon)
+    if 'error' in pred:
+        return f"Crop prediction failed: {pred['error']}\nFallback: Check agmarknet.gov.in for prices."
+    crops = pred.get('predictions', [])
+    if not crops: return "No crop predictions available."
+    top3 = crops[:3]
+    return (f"**Crop prediction — {loc}** (ML model):\n" +
+            "\n".join(f"• **{c['crop']}** ({c['confidence']}%)" for c in top3) +
+            f"\n• Source: Trained crop yield ML model.\n• Live prices: agmarknet.gov.in")
 
 def chat_drought(msg):
-    if df_drought is None:
-        return "Drought dataset offline.\nWeekly drought bulletins: imd.gov.in | nrsc.gov.in"
-    try:
-        spei=round(df_drought['Drought Index (SPEI)'].mean(),3)
-        temp=round(df_drought['Avg Temperature (°C)'].mean(),2)
-        interp=("🔴 Severe drought" if spei<-2 else "🟠 Moderate drought" if spei<-1
-                else "🟡 Mild dryness" if spei<-0.5 else "🟢 Near-normal moisture")
-        return (f"**Drought analysis** (GeoDrishti dataset):\n"
-                f"• Mean SPEI: **{spei}** — {interp}\n• Mean temp: **{temp}°C**\n"
-                f"• SPEI < -1 = drought | -1 to 0 = near-normal | > 0 = wet\n"
-                f"• Source: drought_prediction dataset (static).\n• Current: imd.gov.in | nrsc.gov.in")
-    except KeyError as e:
-        return f"Drought dataset loaded but column `{e}` missing. Columns: {list(df_drought.columns)}"
+    loc = extract_loc(msg)
+    lat, lon = geocode(loc)
+    if lat is None: return f"Couldn't locate **{loc}**. Try: 'drought in Rajasthan'."
+    pred = predict_drought(lat, lon)
+    if 'error' in pred:
+        return f"Drought prediction failed: {pred['error']}\nFallback: Check imd.gov.in for bulletins."
+    return (f"**Drought prediction — {loc}** (ML model):\n"
+            f"• Category: **{pred.get('category', 'N/A')}**\n"
+            f"• Status: **{'Drought' if pred.get('status', False) else 'Normal'}**\n"
+            f"• Source: Trained drought ML models.\n• Current: imd.gov.in | nrsc.gov.in")
 
 def chat_population(msg):
-    if df_pop is None:
-        return "Population dataset offline.\nSee: censusindia.gov.in"
-    year=extract_year(msg)
-    rows=df_pop[df_pop['Year']==year]
-    note=""
-    if rows.empty:
-        avail=sorted(df_pop['Year'].dropna().astype(int).unique().tolist())
-        closest=min(avail,key=lambda y:abs(y-year))
-        rows=df_pop[df_pop['Year']==closest]; note=f"(Year {year} not found — showing {closest})"
-    row=rows.iloc[0]
-    try:
-        pop=round(row['India Population (Millions)'],2); br=round(row['Birth Rate (per 1000)'],2)
-        dr=round(row['Death Rate (per 1000)'],2); ur=round(row['Urbanization_Rate'],2)
-        return (f"**India population — {int(row['Year'])}** {note}:\n"
-                f"• Population: **{pop}M** ({round(pop/1000,3)}B)\n"
-                f"• Birth rate: **{br}/1000** | Death rate: **{dr}/1000**\n"
-                f"• Natural growth: **{round(br-dr,2)}/1000** | Urbanisation: **{ur}%**\n"
-                f"• Source: Population dataset (static).")
-    except KeyError as e: return f"Column `{e}` missing. Available: {list(df_pop.columns)}"
+    loc = extract_loc(msg)
+    lat, lon = geocode(loc)
+    if lat is None: return f"Couldn't locate **{loc}**. Try: 'population in Delhi'."
+    pred = predict_population(lat, lon)
+    if 'error' in pred:
+        return f"Population prediction failed: {pred['error']}\nFallback: Check censusindia.gov.in."
+    return (f"**Urbanization prediction — {loc}** (ML model):\n"
+            f"• Future Population: **{pred.get('future_population_millions', 'N/A')}M**\n"
+            f"• Future Urban Rate: **{pred.get('future_urbanization_rate', 'N/A')}%**\n"
+            f"• Future Urban Pop: **{pred.get('future_urban_population_millions', 'N/A')}M**\n"
+            f"• Infrastructure Pressure: **{pred.get('infrastructure_pressure', 'N/A')}/100**\n"
+            f"• Growth Rate: **{pred.get('growth_rate', 'N/A')}%**\n"
+            f"• Source: Trained population ML models.\n• Census: censusindia.gov.in")
 
 def chat_ndvi(msg):
     loc=extract_loc(msg)
@@ -318,6 +473,10 @@ def smart_fallback(msg):
 DISPATCH = {"weather":chat_weather,"disaster":chat_disaster,"forest":chat_forest,
             "crop":chat_crop,"drought":chat_drought,"population":chat_population,"ndvi":chat_ndvi}
 
+class VAPIRequest(BaseModel):
+    message: dict  # {"role": "user", "content": "message"}
+    call: Optional[dict] = None
+
 @app.post("/chat")
 def chat_endpoint(req: ChatRequest):
     msg=req.message.strip(); intents=classify(msg)
@@ -325,6 +484,23 @@ def chat_endpoint(req: ChatRequest):
     if len(intents)==1: reply=DISPATCH[intents[0]](msg)
     else: reply="\n\n---\n\n".join(DISPATCH[i](msg) for i in intents[:2])
     return {"reply":reply,"intent":intents[0]}
+
+@app.post("/vapi/webhook")
+def vapi_webhook(req: VAPIRequest):
+    user_msg = req.message.get("content", "").strip()
+    if not user_msg:
+        return {"result": "I didn't catch that. Could you please repeat?"}
+    
+    # Use the same chat logic as the web chat
+    intents = classify(user_msg)
+    if intents == ["unknown"]:
+        reply = smart_fallback(user_msg)
+    elif len(intents) == 1:
+        reply = DISPATCH[intents[0]](user_msg)
+    else:
+        reply = "\n\n---\n\n".join(DISPATCH[i](user_msg) for i in intents[:2])
+    
+    return {"result": reply}
 
 @app.post("/aoi/analyze")
 def analyze_aoi(req: AOIRequest):
@@ -345,10 +521,23 @@ def analyze_aoi(req: AOIRequest):
     summary=summaries[level]; email_sent=False
     if req.user_email and level!="green":
         email_sent=send_alert_email(req.user_email,req.aoi_name,level,summary,{"lat":lat,"lng":lon})
+
+    # Get ML predictions
+    crop_pred = predict_crop(lat, lon)
+    forest_pred = predict_forest(lat, lon)
+    drought_pred = predict_drought(lat, lon)
+    pop_pred = predict_population(lat, lon)
+
     return {"lat":lat,"lng":lon,"aoi_name":req.aoi_name,"ndvi":ndvi,"ndwi":ndwi,"ndbi":ndbi,
             "temperature":temp,"wind_speed":wind,"precipitation":prec,"alert_level":level,
             "summary":summary,"email_sent":email_sent,"timestamp":datetime.utcnow().isoformat()+"Z",
-            "data_sources":["Open-Meteo (live)","NASA POWER (16-day proxy)"]}
+            "data_sources":["Open-Meteo (live)","NASA POWER (16-day proxy)"],
+            "predictions": {
+                "crop": crop_pred,
+                "forest": forest_pred,
+                "drought": drought_pred,
+                "population": pop_pred
+            }}
 
 @app.post("/alert/email")
 def email_alert(req: AlertEmailRequest):
