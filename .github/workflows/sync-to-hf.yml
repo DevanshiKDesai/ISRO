@@ -13,8 +13,20 @@ jobs:
           fetch-depth: 0
           lfs: true
 
-      - name: Push to HF Space
+      - name: Configure git
+        run: |
+          git config --global user.email "action@github.com"
+          git config --global user.name "GitHub Action"
+
+      - name: Push backend subfolder to HF Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
+          cd GeoDristri
+          git init
+          git lfs install
+          git lfs track "*.joblib" "*.csv" "*.xlsx"
+          git add .gitattributes
+          git add .
+          git commit -m "deploy from GitHub ${{ github.sha }}"
           git push https://devanshikdesai:$HF_TOKEN@huggingface.co/spaces/GeoDrishti/GeoDrishti HEAD:main --force
