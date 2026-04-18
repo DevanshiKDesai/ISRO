@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import VapiModule from '@vapi-ai/web';
 import AOIPanel from './AOIPanel';
+import { API_BASE } from './config';
 import NotificationsPanel from './NotificationsPanel';
 import './App.css';
 
@@ -141,7 +142,7 @@ function ChatPanel({ isOpen, onClose }) {
   const [input,setInput]       = useState('');
   const [messages,setMessages] = useState([{
     role:'system',
-    content:'**GeoDrishti Omni-AI** — ML-powered predictions.\n\nI use trained ML models for:\n• Disaster risk\n• Crop yield predictions\n• Forest/deforestation alerts\n• Drought analysis\n• Urbanization forecasts\n\nPlus live weather & satellite data. Ask me anything!'
+    content:'**GeoDrishti Omni-AI** — real data only.\n\nI use:\n• Live weather (Open-Meteo)\n• NASA POWER vegetation proxy\n• Your ML model (event_model.joblib)\n• Forest / Crop / Drought / Population datasets\n\nAsk me anything — if I\'m unsure I\'ll tell you exactly what I do know.'
   }]);
   const [loading,setLoading] = useState(false);
   const bottomRef = useRef(null); const inputRef = useRef(null);
@@ -152,7 +153,7 @@ function ChatPanel({ isOpen, onClose }) {
     const q=(text||input).trim(); if(!q||loading) return;
     setMessages(p=>[...p,{role:'user',content:q}]); setInput(''); setLoading(true);
     try {
-      const res=await fetch('https://geodrishti-geodrishti.hf.space/chat',{
+      const res=await fetch(`${API_BASE}/chat`,{
         method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({message:q}) });
       if(!res.ok) throw new Error(`HTTP ${res.status}`);
       const d=await res.json();
