@@ -1,6 +1,6 @@
-import { API_BASE } from './config';
 import { useState } from 'react';
 import { Bell, AlertTriangle, CheckCircle, AlertCircle, Download, Mail, Trash2, Clock, MapPin, X } from 'lucide-react';
+import { sendAlertEmail } from './api';
 
 const LEVEL_META = {
   green:  { color:'#10b981', bg:'rgba(16,185,129,0.1)',  border:'rgba(16,185,129,0.25)', icon:<CheckCircle size={14}/>,   label:'Normal'   },
@@ -20,11 +20,14 @@ export default function NotificationsPanel({ alerts, onDismiss, onClearAll }) {
     const email = emailMap[alert.id];
     if (!email) return;
     try {
-      const res = await fetch(`${API_BASE}/alert/email`, {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ to_email:email, aoi_name:alert.aoi?.name||'AOI', level:alert.level, summary:alert.summary, lat:alert.aoi?.center?.lat||0, lng:alert.aoi?.center?.lng||0 }),
+      const data = await sendAlertEmail({
+        to_email:email,
+        aoi_name:alert.aoi?.name||'AOI',
+        level:(alert.level||'green').toUpperCase(),
+        summary:alert.summary,
+        lat:alert.aoi?.center?.lat||0,
+        lng:alert.aoi?.center?.lng||0,
       });
-      const data = await res.json();
       setSentMap(p=>({...p,[alert.id]:data.success}));
     } catch {
       setSentMap(p=>({...p,[alert.id]:false}));

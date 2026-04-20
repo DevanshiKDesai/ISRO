@@ -11,9 +11,11 @@ import {
   AlertCircle, User, ChevronRight, Shield, MapPin, Send,
   PhoneOff, X, Phone, AlertTriangle, CheckCircle, ExternalLink
 } from 'lucide-react';
+import { useUser, useClerk, useAuth } from '@clerk/clerk-react';
 import VapiModule from '@vapi-ai/web';
 import AOIPanel from './AOIPanel';
-import { API_BASE } from './config';
+import { POWER_BI_EMBEDS } from './config';
+import { askChat } from './api';
 import NotificationsPanel from './NotificationsPanel';
 import './App.css';
 
@@ -40,6 +42,7 @@ function getStoredUser() { try { return JSON.parse(localStorage.getItem(STORAGE_
 
 // ── AUTH MODAL ─────────────────────────────────────────────────
 function AuthModal({ onClose, onAuthSuccess }) {
+  const { openSignIn, openSignUp } = useClerk();
   const [tab,setTab]         = useState('login');
   const [showPw,setShowPw]   = useState(false);
   const [loading,setLoading] = useState(false);
@@ -47,11 +50,30 @@ function AuthModal({ onClose, onAuthSuccess }) {
   const [le,setLe] = useState(''); const [lp,setLp] = useState('');
   const [sn,setSn] = useState(''); const [se,setSe] = useState(''); const [sp,setSp] = useState('');
   const firstRef = useRef(null);
+  
+  const clerkEnabled = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+
   useEffect(()=>{ firstRef.current?.focus(); setError(''); },[tab]);
   useEffect(()=>{
     const fn=e=>{ if(e.key==='Escape') onClose(); };
     window.addEventListener('keydown',fn); return ()=>window.removeEventListener('keydown',fn);
   },[onClose]);
+  
+  const handleClerk = async(mode) => {
+    setError(''); setLoading(true);
+    try {
+      if (mode === 'signup') {
+        openSignUp();
+      } else {
+        openSignIn();
+      }
+      onClose();
+    } catch(e) {
+      setError(e.message || 'Clerk authentication unavailable.');
+    } finally {
+      setLoading(false);
+    }
+  };
   const handle = async(fn)=>{ setError(''); setLoading(true);
     try { await new Promise(r=>setTimeout(r,500)); onAuthSuccess(fn()); }
     catch(e) { setError(e.message); } finally { setLoading(false); } };
@@ -73,6 +95,16 @@ function AuthModal({ onClose, onAuthSuccess }) {
             </button>
           ))}
         </div>
+        {clerkEnabled && (
+          <div className="auth-form" style={{paddingTop:0}}>
+            {error && <div className="form-error" role="alert"><AlertCircle size={14}/>{error}</div>}
+            <button type="button" className="auth-submit" disabled={loading} onClick={()=>handleClerk(tab==='login'?'login':'signup')}>
+              <Shield size={16}/> {tab==='login'?'Continue with Clerk':'Create account with Clerk'}
+            </button>
+            <p className="auth-footer-text">Google, GitHub, and email/password are handled on the hosted Clerk screen.</p>
+          </div>
+        )}
+        {!clerkEnabled && (
         <form className="auth-form" noValidate
               onSubmit={e=>{ e.preventDefault(); tab==='login'?handle(()=>authLogin(le,lp)):handle(()=>authSignup(sn,se,sp)); }}>
           {error && <div className="form-error" role="alert"><AlertCircle size={14}/>{error}</div>}
@@ -117,6 +149,7 @@ function AuthModal({ onClose, onAuthSuccess }) {
           </p>
           {tab==='login' && <p className="auth-footer-text" style={{marginTop:4}}>Demo: <code style={{fontSize:'0.75rem'}}>demo@isro.gov.in / ecosight123</code></p>}
         </form>
+        )}
       </div>
     </div>
   );
@@ -153,10 +186,7 @@ function ChatPanel({ isOpen, onClose }) {
     const q=(text||input).trim(); if(!q||loading) return;
     setMessages(p=>[...p,{role:'user',content:q}]); setInput(''); setLoading(true);
     try {
-      const res=await fetch(`${API_BASE}/chat`,{
-        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({message:q}) });
-      if(!res.ok) throw new Error(`HTTP ${res.status}`);
-      const d=await res.json();
+      const d=await askChat(q);
       setMessages(p=>[...p,{role:'system',content:d.reply}]);
     } catch(err) {
       setMessages(p=>[...p,{role:'system',content:`⚠️ **Backend unreachable.**\nStart: \`uvicorn main:app --reload\`\n(${err.message})`}]);
@@ -208,7 +238,7 @@ function ChatPanel({ isOpen, onClose }) {
 function VapiCallOverlay({ isActive, onEnd }) {
   const [secs,setSecs] = useState(0);
   useEffect(()=>{
-    if(!isActive){setSecs(0);return;}
+    if(!isActive) return;
     const id=setInterval(()=>setSecs(s=>s+1),1000); return ()=>clearInterval(id);
   },[isActive]);
   if(!isActive) return null;
@@ -307,6 +337,9 @@ const MODULES = [
 
 // ── MAIN APP ───────────────────────────────────────────────────
 export default function App() {
+  const { user, isLoaded: userLoaded } = useUser();
+  const { signOut, openUserProfile } = useClerk();
+  
   const [activeView,setActiveView]     = useState('aggregate');
   const [theme,setTheme]               = useState('dark-theme');
   const [isCallActive,setIsCallActive] = useState(false);
@@ -314,11 +347,43 @@ export default function App() {
   const [showNotif,setShowNotif]       = useState(false);
   const [alerts,setAlerts]             = useState([]);
   const [toasts,setToasts]             = useState([]);  // shown as popups
-  const [currentUser,setCurrentUser]   = useState(getStoredUser);
+  const [currentUser,setCurrentUser]   = useState(null);
   const [showAuthModal,setShowAuthModal] = useState(false);
 
+  // Sync Clerk user with app state
+  useEffect(() => {
+    if (userLoaded) {
+      if (user) {
+        setCurrentUser({
+          name: user.fullName || user.username || user.primaryEmailAddress?.emailAddress,
+          email: user.primaryEmailAddress?.emailAddress,
+          role: 'AUTHENTICATED',
+          isClerk: true
+        });
+      } else {
+        // Fallback to local storage for demo users if Clerk is not logged in
+        setCurrentUser(getStoredUser());
+      }
+    }
+  }, [user, userLoaded]);
+
   const handleAuthSuccess = u => { setCurrentUser(u); setShowAuthModal(false); };
-  const handleLogout      = () => { authLogout(); setCurrentUser(null); setActiveView('aggregate'); };
+  
+  const handleManageAccount = () => {
+    if (currentUser?.isClerk) {
+      openUserProfile();
+    } else {
+      // For demo users, maybe just show an alert or do nothing
+      alert("Manage Account is only available for Clerk users.");
+    }
+  };
+
+  const handleLogout      = async() => {
+    if(user) await signOut();
+    authLogout();
+    setCurrentUser(null);
+    setActiveView('aggregate');
+  };
   const toggleVoice = () => {
     if(isCallActive){vapi.stop();setIsCallActive(false);}
     else{vapi.start(import.meta.env.VITE_VAPI_ASSISTANT);setIsCallActive(true);}
@@ -350,7 +415,7 @@ export default function App() {
       <a href="#main-content" className="skip-link">Skip to main content</a>
 
       {showAuthModal && <AuthModal onClose={()=>setShowAuthModal(false)} onAuthSuccess={handleAuthSuccess}/>}
-      <VapiCallOverlay isActive={isCallActive} onEnd={()=>{vapi.stop();setIsCallActive(false);}}/>
+      <VapiCallOverlay key={isCallActive?'active':'idle'} isActive={isCallActive} onEnd={()=>{vapi.stop();setIsCallActive(false);}}/>
 
       {/* ── ALERT TOASTS ── */}
       <div className="toast-container" aria-live="assertive" aria-atomic="false">
@@ -388,8 +453,8 @@ export default function App() {
 
         {currentUser && (
           <div className="sidebar-user">
-            <div className="sidebar-user-avatar" aria-hidden="true">{userInitials}</div>
-            <div className="sidebar-user-info">
+            <div className="sidebar-user-avatar" aria-hidden="true" onClick={handleManageAccount} style={{cursor:'pointer'}} title="Manage Account">{userInitials}</div>
+            <div className="sidebar-user-info" onClick={handleManageAccount} style={{cursor:'pointer'}} title="Manage Account">
               <div className="sidebar-user-name">{currentUser.name}</div>
               <div className="sidebar-user-role">{currentUser.role}</div>
             </div>
@@ -433,11 +498,15 @@ export default function App() {
             </button>
             <div className="divider-vertical" aria-hidden="true"/>
             {currentUser ? (
-              <button className="user-menu-btn" onClick={handleLogout} aria-label={`${currentUser.name} — sign out`}>
-                <div className="user-avatar-sm" aria-hidden="true">{userInitials}</div>
-                <span className="user-name-sm">{currentUser.name}</span>
-                <LogOut size={13} style={{color:'var(--text-dim)',marginLeft:2}} aria-hidden="true"/>
-              </button>
+              <div style={{display:'flex', alignItems:'center', gap:8}}>
+                <button className="user-menu-btn" onClick={handleManageAccount} aria-label={`${currentUser.name} — manage account`} title="Manage Account">
+                  <div className="user-avatar-sm" aria-hidden="true">{userInitials}</div>
+                  <span className="user-name-sm">{currentUser.name}</span>
+                </button>
+                <button className="icon-btn" onClick={handleLogout} title="Sign out" aria-label="Sign out">
+                  <LogOut size={16} style={{color:'var(--text-dim)'}}/>
+                </button>
+              </div>
             ) : (
               <button className="auth-btn" onClick={()=>setShowAuthModal(true)} aria-label="Sign in">
                 <UserCircle size={18} aria-hidden="true"/><span>Sign In</span>
@@ -450,9 +519,9 @@ export default function App() {
           <NotificationsPanel alerts={alerts} onDismiss={id=>setAlerts(p=>p.filter(a=>a.id!==id))} onClearAll={()=>setAlerts([])}/>
         </div>
 
-        <div className="dashboard-overlay">
+        <div className={`flex flex-1 flex-col overflow-hidden ${activeView === 'aoi' ? '' : 'p-5 overflow-y-auto'}`}>
           {activeView==='aggregate' && (
-            <>
+            <div className="space-y-4">
               <div className="stats-bar">
                 {STATS.map((s,i)=>(
                   <div key={i} className="stat-chip">
@@ -472,10 +541,19 @@ export default function App() {
                       <span aria-hidden="true">{mod.icon}</span>{mod.title}
                       <span className="card-badge badge-sync">PowerBI</span>
                     </div>
-                    <div className="iframe-placeholder">
-                      <div className="placeholder-icon" style={{background:`${mod.color}18`}}><span style={{color:mod.color}}>{mod.icon}</span></div>
-                      <div className="placeholder-label">Embed PowerBI Report<span>Replace with your &lt;iframe&gt;</span></div>
-                    </div>
+                    {POWER_BI_EMBEDS[mod.id] ? (
+                      <iframe
+                        src={POWER_BI_EMBEDS[mod.id]}
+                        title={`${mod.title} dashboard`}
+                        style={{width:'100%',height:'100%',minHeight:'320px',border:'none',borderRadius:'18px'}}
+                        allowFullScreen
+                      />
+                    ) : (
+                      <div className="iframe-placeholder">
+                        <div className="placeholder-icon" style={{background:`${mod.color}18`}}><span style={{color:mod.color}}>{mod.icon}</span></div>
+                        <div className="placeholder-label">Embed PowerBI Report<span>Set `VITE_POWERBI_*` URLs to render live dashboards</span></div>
+                      </div>
+                    )}
                   </div>
                 ))}
                 <div className="glass-card grid-card" aria-live="polite">
@@ -505,33 +583,36 @@ export default function App() {
                   </div>
                 </div>
               </div>
-            </>
+            </div>
           )}
 
           {activeView==='aoi' && (
-            <div className="glass-card single-view-card" style={{overflow:'hidden'}}>
-              <div className="card-header" style={{borderBottomColor:'var(--accent)'}}>
-                <div className="card-header-accent" style={{background:'var(--accent)'}} aria-hidden="true"/>
-                <MapPin size={18} style={{color:'var(--accent)'}} aria-hidden="true"/>
-                AOI Monitor — Pin, Analyse &amp; Alert
-                <span className="card-badge badge-live">Satellite</span>
-              </div>
+            <div className="flex-1 overflow-hidden">
               <AOIPanel currentUser={currentUser} onAlertTriggered={handleAlertTriggered} theme={theme}/>
             </div>
           )}
 
           {activeView!=='aggregate'&&activeView!=='aoi' && (
-            <div className="glass-card single-view-card" style={{position:'relative'}}>
+            <div className="glass-card single-view-card" style={{position:'relative', height:'100%'}}>
               <div className="card-header" style={{borderBottomColor:currentModule?.color}}>
                 <div className="card-header-accent" style={{background:currentModule?.color}} aria-hidden="true"/>
                 <span aria-hidden="true">{currentModule?.icon}</span>
                 {currentModule?.title} — Detailed View
                 <span className="card-badge badge-sync">PowerBI</span>
               </div>
-              <div className="iframe-placeholder full">
-                <div className="placeholder-icon"><span style={{color:currentModule?.color}}>{currentModule?.icon}</span></div>
-                <div className="placeholder-label">{currentModule?.title} Visualization<span>Paste your PowerBI &lt;iframe&gt; here</span></div>
-              </div>
+              {POWER_BI_EMBEDS[currentModule?.id] ? (
+                <iframe
+                  src={POWER_BI_EMBEDS[currentModule?.id]}
+                  title={`${currentModule?.title} detailed dashboard`}
+                  style={{width:'100%',height:'100%',minHeight:'540px',border:'none',borderRadius:'18px'}}
+                  allowFullScreen
+                />
+              ) : (
+                <div className="iframe-placeholder full">
+                  <div className="placeholder-icon"><span style={{color:currentModule?.color}}>{currentModule?.icon}</span></div>
+                  <div className="placeholder-label">{currentModule?.title} Visualization<span>Set `VITE_POWERBI_*` URLs to render live dashboards</span></div>
+                </div>
+              )}
               {!currentUser&&isProtected(activeView) && <ProtectedOverlay onLoginClick={()=>setShowAuthModal(true)}/>}
             </div>
           )}

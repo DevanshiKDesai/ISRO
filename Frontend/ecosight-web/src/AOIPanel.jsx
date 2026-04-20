@@ -1,278 +1,466 @@
-// AOIPanel.jsx — Click map to pin + auto-analyse all 6 fields
 import { useEffect, useRef, useState } from 'react';
-import { API_BASE } from './config';
-import { MapPin, Download, Trash2, RefreshCw, Mail, Satellite, Info, Loader, TreePine, Users, CloudRain, Wheat, Droplets, Activity } from 'lucide-react';
+import {
+  AlertTriangle,
+  CloudRain,
+  Download,
+  Droplets,
+  Info,
+  Loader,
+  Mail,
+  MapPin,
+  RefreshCw,
+  Satellite,
+  Trash2,
+  TreePine,
+  Users,
+  Wheat,
+  ChevronLeft,
+  ChevronRight,
+  Maximize2,
+  Minimize2,
+  Activity,
+  Zap,
+  ShieldAlert,
+  Wind,
+  Thermometer,
+  Layers,
+} from 'lucide-react';
+import { 
+  ResponsiveContainer, 
+  RadialBarChart, 
+  RadialBar, 
+  Tooltip as RechartsTooltip,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+} from 'recharts';
+import { motion, AnimatePresence } from 'framer-motion';
+import clsx from 'clsx';
+import { twMerge } from 'tailwind-merge';
+import { analyzeAOI, sendAlertEmail } from './api';
+
+// Utility for tailwind classes
+function cn(...inputs) {
+  return twMerge(clsx(inputs));
+}
 
 const ALERT_META = {
-  green:  { color:'#10b981', bg:'rgba(16,185,129,0.12)', border:'rgba(16,185,129,0.3)',  label:'🟢 Normal'   },
-  yellow: { color:'#f59e0b', bg:'rgba(245,158,11,0.12)', border:'rgba(245,158,11,0.3)',  label:'🟡 Heads Up' },
-  orange: { color:'#f97316', bg:'rgba(249,115,22,0.12)', border:'rgba(249,115,22,0.3)',  label:'🟠 Warning'  },
-  red:    { color:'#ef4444', bg:'rgba(239,68,68,0.12)',  border:'rgba(239,68,68,0.3)',   label:'🔴 Critical' },
+  GREEN: { color: '#10b981', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', text: 'text-emerald-500', label: 'Safe' },
+  YELLOW: { color: '#f59e0b', bg: 'bg-amber-500/10', border: 'border-amber-500/30', text: 'text-amber-500', label: 'Warning' },
+  RED: { color: '#ef4444', bg: 'bg-rose-500/10', border: 'border-rose-500/30', text: 'text-rose-500', label: 'Danger' },
 };
 
-const FIELD_META = [
-  { key:'weather',    icon:<CloudRain size={13}/>,  label:'Weather',    color:'#8b5cf6' },
-  { key:'ndvi',       icon:<Activity size={13}/>,   label:'NDVI/NDWI',  color:'#10b981' },
-  { key:'forest',     icon:<TreePine size={13}/>,   label:'Forest',     color:'#22c55e' },
-  { key:'crop',       icon:<Wheat size={13}/>,      label:'Crop',       color:'#f59e0b' },
-  { key:'drought',    icon:<Droplets size={13}/>,   label:'Drought',    color:'#ef4444' },
-  { key:'population', icon:<Users size={13}/>,      label:'Population', color:'#3b82f6' },
-];
+const PARAM_META = {
+  crop: { label: 'Crop Prediction', icon: <Wheat size={16} />, desc: 'AI-recommended crop based on soil and weather.', color: '#f59e0b' },
+  drought: { label: 'Drought Status', icon: <Droplets size={16} />, desc: 'Current drought severity and active risk level.', color: '#ef4444' },
+  disaster: { label: 'Disaster Risk', icon: <CloudRain size={16} />, desc: 'Probability and intensity of extreme weather events.', color: '#8b5cf6' },
+  forest: { label: 'Forest Health', icon: <TreePine size={16} />, desc: 'Deforestation alerts and future vegetation cover.', color: '#10b981' },
+  population: { label: 'Urban Growth', icon: <Users size={16} />, desc: '5-year population and infrastructure projections.', color: '#3b82f6' },
+};
+
+function PredictionCard({ id, value, loading, subValue }) {
+  const meta = PARAM_META[id] || { label: id, icon: <Activity size={16} />, color: '#6366f1' };
+  
+  // Status logic for ML predictions
+  let status = 'Normal';
+  let statusColor = 'text-emerald-500';
+  let bgColor = 'bg-emerald-500/10';
+  
+  if (loading) {
+    status = 'Analyzing';
+    statusColor = 'text-amber-500';
+    bgColor = 'bg-amber-500/10';
+  } else if (!value || value === 'N/A') {
+    status = 'No Data';
+    statusColor = 'text-gray-400';
+    bgColor = 'bg-gray-400/10';
+  } else {
+    // Custom logic per domain
+    const valStr = String(value).toLowerCase();
+    if (valStr.includes('risk') || valStr.includes('alert') || valStr.includes('severe') || valStr.includes('high')) {
+      status = 'Warning';
+      statusColor = 'text-rose-500';
+      bgColor = 'bg-rose-500/10';
+    } else if (valStr.includes('moderate')) {
+      status = 'Monitor';
+      statusColor = 'text-amber-500';
+      bgColor = 'bg-amber-500/10';
+    }
+  }
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="group relative flex flex-col gap-3 rounded-2xl border border-white/5 bg-white/5 p-4 backdrop-blur-md transition-all hover:bg-white/10 hover:shadow-xl hover:shadow-black/20"
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-white/80 group-hover:text-white" style={{ color: meta.color }}>
+            {meta.icon}
+          </div>
+          <span className="text-sm font-medium text-white/60">{meta.label}</span>
+        </div>
+        <div className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider", bgColor, statusColor)}>
+          {status}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <div className="flex items-baseline gap-2 overflow-hidden">
+          <span className="truncate text-xl font-bold tracking-tight text-white lg:text-2xl">
+            {loading ? <span className="animate-pulse">...</span> : (value || 'N/A')}
+          </span>
+        </div>
+        {subValue && !loading && (
+          <span className="text-[10px] font-medium text-white/40 uppercase tracking-wide">
+            {subValue}
+          </span>
+        )}
+      </div>
+
+      {/* Tooltip on hover */}
+      <div className="pointer-events-none absolute -top-12 left-0 z-50 w-full opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="rounded-lg bg-black/90 p-2 text-[10px] leading-relaxed text-white/90 shadow-2xl backdrop-blur-md border border-white/10">
+          {meta.desc}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 
 export default function AOIPanel({ currentUser, onAlertTriggered, theme }) {
-  const mapRef    = useRef(null);
-  const leafMap   = useRef(null);
-  const drawnLyr  = useRef(null);
-  const pinMkr    = useRef(null);
+  const mapRef = useRef(null);
+  const leafMap = useRef(null);
+  const drawnLyr = useRef(null);
+  const pinMkr = useRef(null);
 
-  const [aois,          setAois]          = useState([]);
-  const [selected,      setSelected]      = useState(null);
-  const [analysis,      setAnalysis]      = useState(null);
-  const [fieldData,     setFieldData]     = useState({});
-  const [loading,       setLoading]       = useState(false);
-  const [loadingFields, setLoadingFields] = useState({});
-  const [emailInput,    setEmailInput]    = useState(currentUser?.email || '');
-  const [emailStatus,   setEmailStatus]   = useState(null);
-  const [mapReady,      setMapReady]      = useState(false);
-  const [activeTab,     setActiveTab]     = useState('indices');
+  const [aois, setAois] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [analysis, setAnalysis] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [emailInput, setEmailInput] = useState(currentUser?.email || '');
+  const [emailStatus, setEmailStatus] = useState(null);
+  const [mapReady, setMapReady] = useState(false);
 
   useEffect(() => {
     const init = () => {
       if (!window.L || !mapRef.current || leafMap.current) return;
-      const map = window.L.map(mapRef.current, { center:[20.5937,78.9629], zoom:5 });
+      const map = window.L.map(mapRef.current, { center: [20.5937, 78.9629], zoom: 5 });
       applyTile(map, theme);
       const drawn = new window.L.FeatureGroup();
-      map.addLayer(drawn); drawnLyr.current = drawn;
+      map.addLayer(drawn);
+      drawnLyr.current = drawn;
+      
       const ctrl = new window.L.Control.Draw({
         edit: { featureGroup: drawn },
         draw: {
-          polygon:   { shapeOptions:{ color:'#00d4aa', fillOpacity:0.08, weight:2 } },
-          rectangle: { shapeOptions:{ color:'#00d4aa', fillOpacity:0.08, weight:2 } },
-          circle:false, circlemarker:false, polyline:false, marker:false,
+          polygon: { shapeOptions: { color: '#00d4aa', fillOpacity: 0.1, weight: 2 } },
+          rectangle: { shapeOptions: { color: '#00d4aa', fillOpacity: 0.1, weight: 2 } },
+          circle: false,
+          circlemarker: false,
+          polyline: false,
+          marker: false,
         },
       });
       map.addControl(ctrl);
-      map.on('click', e => dropPin(map, e.latlng.lat, e.latlng.lng));
-      map.on(window.L.Draw.Event.CREATED, e => {
-        drawn.clearLayers(); drawn.addLayer(e.layer);
-        const b=e.layer.getBounds(), c=b.getCenter();
-        createAOI(c.lat, c.lng, {n:b.getNorth(),s:b.getSouth(),e:b.getEast(),w:b.getWest()});
+
+      map.on('click', (e) => dropPin(map, e.latlng.lat, e.latlng.lng));
+      map.on(window.L.Draw.Event.CREATED, (e) => {
+        drawn.clearLayers();
+        drawn.addLayer(e.layer);
+        const bounds = e.layer.getBounds();
+        createAOI(bounds.getCenter().lat, bounds.getCenter().lng, {
+          n: bounds.getNorth(), s: bounds.getSouth(), e: bounds.getEast(), w: bounds.getWest(),
+        });
       });
-      map.on(window.L.Draw.Event.DELETED, () => {
-        setAnalysis(null); setSelected(null); setFieldData({});
-        if(pinMkr.current){map.removeLayer(pinMkr.current);pinMkr.current=null;}
-      });
-      leafMap.current=map; setMapReady(true);
+      
+      leafMap.current = map;
+      setMapReady(true);
     };
-    if(window.L) init();
-    else{const iv=setInterval(()=>{if(window.L){clearInterval(iv);init();}},200);return()=>clearInterval(iv);}
-    return()=>{if(leafMap.current){leafMap.current.remove();leafMap.current=null;}};
-  // eslint-disable-next-line
-  },[]);
 
-  useEffect(()=>{
-    if(!leafMap.current||!window.L)return;
-    leafMap.current.eachLayer(l=>{if(l._url)leafMap.current.removeLayer(l);});
-    applyTile(leafMap.current,theme);
-    if(drawnLyr.current)leafMap.current.addLayer(drawnLyr.current);
-  },[theme]);
+    if (window.L) init();
+    return () => { if (leafMap.current) { leafMap.current.remove(); leafMap.current = null; } };
+  }, []);
 
-  function applyTile(map,t){
+  function applyTile(map, currentTheme) {
     window.L.tileLayer(
-      t==='dark-theme'?'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png':'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-      {attribution:'© OSM © CARTO',maxZoom:19}
+      currentTheme === 'dark-theme'
+        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+        : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+      { attribution: '© OSM © CARTO', maxZoom: 19 }
     ).addTo(map);
   }
 
-  function dropPin(map,lat,lng){
-    if(pinMkr.current)map.removeLayer(pinMkr.current);
-    const icon=window.L.divIcon({className:'',html:`<div style="width:24px;height:24px;background:#00d4aa;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 12px rgba(0,212,170,0.7)"></div>`,iconSize:[24,24],iconAnchor:[12,24]});
-    pinMkr.current=window.L.marker([lat,lng],{icon}).addTo(map);
-    createAOI(lat,lng,{n:lat+0.05,s:lat-0.05,e:lng+0.05,w:lng-0.05});
+  function dropPin(map, lat, lng) {
+    if (pinMkr.current) map.removeLayer(pinMkr.current);
+    const icon = window.L.divIcon({
+      className: '',
+      html: '<div class="w-6 h-6 bg-accent rounded-full border-4 border-white shadow-lg animate-bounce"></div>',
+      iconSize: [24, 24],
+      iconAnchor: [12, 12],
+    });
+    pinMkr.current = window.L.marker([lat, lng], { icon }).addTo(map);
+    createAOI(lat, lng, { n: lat + 0.05, s: lat - 0.05, e: lng + 0.05, w: lng - 0.05 });
   }
 
-  function createAOI(lat,lng,bounds){
-    const aoi={id:Date.now(),name:`AOI-${new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}`,bounds,center:{lat:+lat.toFixed(5),lng:+lng.toFixed(5)},alertLevel:null,createdAt:new Date().toISOString()};
-    setAois(p=>[aoi,...p.slice(0,4)]); setSelected(aoi); setFieldData({}); setActiveTab('indices');
+  function createAOI(lat, lng, bounds) {
+    const aoi = {
+      id: Date.now(),
+      name: `AOI-${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`,
+      bounds,
+      center: { lat: +lat.toFixed(5), lng: +lng.toFixed(5) },
+      alertLevel: 'green',
+      createdAt: new Date().toISOString(),
+    };
+    setAois(prev => [aoi, ...prev.slice(0, 4)]);
+    setSelected(aoi);
     runAnalysis(aoi);
   }
 
-  const runAnalysis = async(aoi)=>{
-    setLoading(true); setAnalysis(null); setEmailStatus(null);
-    try{
-      const res=await fetch(`${API_BASE}/aoi/analyze`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat:aoi.center.lat,lng:aoi.center.lng,north:aoi.bounds.n,south:aoi.bounds.s,east:aoi.bounds.e,west:aoi.bounds.w,aoi_name:aoi.name,user_email:emailInput||null})});
-      if(!res.ok)throw new Error(`HTTP ${res.status}`);
-      const data=await res.json();
+  async function runAnalysis(aoi) {
+    setLoading(true);
+    setAnalysis(null);
+    try {
+      const data = await analyzeAOI({
+        lat: aoi.center.lat, lng: aoi.center.lng,
+        north: aoi.bounds.n, south: aoi.bounds.s,
+        east: aoi.bounds.e, west: aoi.bounds.w,
+        aoi_name: aoi.name, user_email: emailInput || null,
+      });
       setAnalysis(data);
-      const upd={...aoi,alertLevel:data.alert_level};
-      setAois(p=>p.map(a=>a.id===aoi.id?upd:a)); setSelected(upd);
-      if(data.alert_level!=='green'){onAlertTriggered?.({id:Date.now(),aoi:upd,level:data.alert_level,summary:data.summary,timestamp:data.timestamp,indices:{ndvi:data.ndvi,ndwi:data.ndwi,ndbi:data.ndbi}});}
-    }catch(err){
-      setAnalysis({ndvi:null,ndwi:null,ndbi:null,temperature:'—',wind_speed:'—',precipitation:'—',alert_level:'green',summary:`⚠️ Backend unreachable: ${err.message}. Check that HF Space is running.`,timestamp:new Date().toISOString(),data_sources:['Offline']});
-    }finally{setLoading(false);}
-    runFields(aoi);
-  };
-
-  const runFields=async(aoi)=>{
-    const lat=aoi.center.lat.toFixed(4),lng=aoi.center.lng.toFixed(4);
-    let city='India';
-    try{
-      const nom=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,{headers:{'Accept-Language':'en','User-Agent':'GeoDrishti/1.0'}}).then(r=>r.json());
-      city=nom?.address?.state||nom?.address?.city||nom?.address?.county||'India';
-    }catch{}
-    const queries={weather:`weather in ${city}`,forest:`forest cover in ${city}`,crop:`crop yield for ${city}`,drought:'drought index analysis',population:'population data for India 2017',ndvi:`vegetation ndvi for ${city}`};
-    setLoadingFields(Object.fromEntries(Object.keys(queries).map(k=>[k,true])));
-    await Promise.allSettled(Object.entries(queries).map(async([field,query])=>{
-      try{
-        const res=await fetch(`${API_BASE}/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:query})});
-        const d=await res.json();
-        setFieldData(p=>({...p,[field]:d.reply}));
-      }catch{
-        setFieldData(p=>({...p,[field]:'⚠️ Backend unreachable. Check HF Space is running.'}));
-      }finally{
-        setLoadingFields(p=>({...p,[field]:false}));
+      const level = (data.alert_level || 'GREEN').toUpperCase();
+      const updated = { ...aoi, alertLevel: level.toLowerCase() };
+      setAois(prev => prev.map(item => item.id === aoi.id ? updated : item));
+      setSelected(updated);
+      
+      if (level !== 'GREEN') {
+        onAlertTriggered?.({
+          id: Date.now(), aoi: updated, level: level.toLowerCase(),
+          summary: data.summary, timestamp: new Date().toISOString(),
+        });
       }
-    }));
-  };
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  }
 
-  const sendEmail=async()=>{
-    if(!emailInput||!analysis||!selected)return;
-    setEmailStatus('sending');
-    try{
-      const res=await fetch(`${API_BASE}/alert/email`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to_email:emailInput,aoi_name:selected.name,level:analysis.alert_level,summary:analysis.summary,lat:selected.center.lat,lng:selected.center.lng})});
-      const d=await res.json(); setEmailStatus(d.success?'sent':'failed');
-    }catch{setEmailStatus('failed');}
-  };
+  function downloadCSV() {
+    if (!analysis) return;
+    const rows = [
+      ["Parameter", "Value", "Status"],
+      ["Location", analysis.location, ""],
+      ["Crop Prediction", analysis.domains?.crop_intelligence?.best_crop?.recommended_crop || "N/A", ""],
+      ["Drought Status", analysis.domains?.drought_monitoring?.category?.primary_category || "N/A", ""],
+      ["Disaster Risk", analysis.domains?.weather_disaster?.event?.primary_event || "N/A", ""],
+      ["Forest Health", analysis.domains?.forest_health?.alert?.deforestation_alert_label || "N/A", ""],
+      ["Urban Growth", analysis.domains?.urban_growth?.population?.future_population_millions || "N/A", "Million"],
+      ["Temperature", analysis.inputs?.temperature, "°C"],
+      ["Wind Speed", analysis.inputs?.wind_speed, "km/h"],
+      ["NDVI", analysis.indices?.ndvi, ""],
+      ["NDWI", analysis.indices?.ndwi, ""],
+      ["NDBI", analysis.indices?.ndbi, ""],
+    ];
+    const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `EcoSight_Report_${analysis.location}.csv`);
+    document.body.appendChild(link);
+    link.click();
+  }
 
-  const exportGeoJSON=()=>{
-    if(!selected||!analysis)return;
-    const geojson={type:'FeatureCollection',generator:'ISRO GeoDrishti EcoSight',generated_at:new Date().toISOString(),features:[{type:'Feature',geometry:{type:'Polygon',coordinates:[[[selected.bounds.w,selected.bounds.n],[selected.bounds.e,selected.bounds.n],[selected.bounds.e,selected.bounds.s],[selected.bounds.w,selected.bounds.s],[selected.bounds.w,selected.bounds.n]]]},properties:{name:selected.name,center_lat:selected.center.lat,center_lng:selected.center.lng,ndvi:analysis.ndvi,ndwi:analysis.ndwi,ndbi:analysis.ndbi,temperature_c:analysis.temperature,wind_kmh:analysis.wind_speed,precip_mm:analysis.precipitation,alert_level:analysis.alert_level,summary:analysis.summary,field_analysis:fieldData,exported_at:new Date().toISOString()}}]};
-    const blob=new Blob([JSON.stringify(geojson,null,2)],{type:'application/json'});
-    const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob),download:`${selected.name}_geodrishti_full.geojson`});
-    a.click(); URL.revokeObjectURL(a.href);
-  };
+  function downloadReport() {
+    if (!analysis) return;
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(analysis, null, 2));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", `EcoSight_Report_${analysis.location}.json`);
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+  }
 
-  const renderText=(text)=>{
-    if(!text)return null;
-    return text.split(/(\*\*[^*]+\*\*)/g).map((p,i)=>p.startsWith('**')&&p.endsWith('**')?<strong key={i}>{p.slice(2,-2)}</strong>:<span key={i}>{p}</span>);
-  };
+  const alertMeta = analysis ? ALERT_META[analysis.alert_level || 'GREEN'] : ALERT_META.GREEN;
 
-  const am=analysis?ALERT_META[analysis.alert_level]||ALERT_META.green:null;
-
-  return(
-    <div className="aoi-panel">
-      <div className="aoi-map-wrap">
-        <div className="aoi-map-header">
-          <MapPin size={14} style={{color:'var(--accent)'}}/>
-          <span>Click anywhere on map to pin &amp; analyse</span>
-          <span className="aoi-tip">or draw a region with the toolbar</span>
+  return (
+    <div className="flex h-screen w-full flex-col overflow-hidden bg-[#0a0a0c] text-white lg:flex-row">
+      {/* ── MAP AREA (70-75%) ──────────────────────────────────── */}
+      <div className={cn(
+        "relative transition-all duration-500 ease-in-out",
+        isExpanded ? "w-0 lg:w-0" : "h-[50vh] w-full lg:h-full lg:flex-1"
+      )}>
+        <div ref={mapRef} className="h-full w-full" />
+        <div className="pointer-events-none absolute left-6 top-6 flex flex-col gap-2">
+          <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-black/40 px-4 py-2 backdrop-blur-xl border border-white/10 shadow-2xl">
+            <MapPin size={16} className="text-accent" />
+            <span className="text-xs font-semibold tracking-wide uppercase text-white/90">
+              Interactive Geospatial Dashboard
+            </span>
+          </div>
         </div>
-        <div ref={mapRef} className="aoi-map" role="application" aria-label="Interactive map"/>
-        {!mapReady&&<div className="aoi-map-loading"><Loader size={22} className="spin"/><span>Loading map…</span></div>}
+
+        {/* Floating Toggle for Desktop */}
+        <button 
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="pointer-events-auto absolute right-6 top-6 hidden items-center justify-center rounded-xl bg-black/40 p-3 text-white/80 backdrop-blur-xl border border-white/10 transition-all hover:bg-black/60 hover:text-white lg:flex"
+        >
+          {isExpanded ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
+        </button>
       </div>
 
-      <div className="aoi-sidebar">
-        {aois.length>0&&(
-          <div className="aoi-history">
-            <div className="aoi-section-label">Recent Pins</div>
-            {aois.map(a=>{const m=ALERT_META[a.alertLevel||'green'];return(
-              <button key={a.id} className={`aoi-history-item ${selected?.id===a.id?'active':''}`} style={selected?.id===a.id?{borderColor:m.color}:{}} onClick={()=>{setSelected(a);runAnalysis(a);}}>
-                <span style={{color:m.color}}>{m.label.split(' ')[0]}</span>
-                <span className="aoi-history-name">{a.name}</span>
-                <span className="aoi-history-coords">{a.center.lat}, {a.center.lng}</span>
-              </button>
-            );})}
+      {/* ── PREDICTION PANEL (25-30%) ──────────────────────────── */}
+      <div className={cn(
+        "flex h-[50vh] flex-col border-t border-white/10 bg-[#0f0f12]/80 backdrop-blur-2xl transition-all duration-500 ease-in-out lg:h-full lg:border-l lg:border-t-0",
+        isExpanded ? "w-full lg:w-full" : "w-full lg:w-[400px]"
+      )}>
+        {/* Panel Header */}
+        <div className="flex items-center justify-between border-b border-white/5 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <Activity size={20} className="text-accent" />
+            <h2 className="text-lg font-bold tracking-tight">EcoSight Analytics</h2>
           </div>
-        )}
-
-        {aois.length===0&&(
-          <div className="aoi-empty">
-            <Satellite size={36} style={{color:'var(--text-dim)',marginBottom:10}}/>
-            <p>Click anywhere on the map to pin a location.</p>
-            <p className="aoi-empty-sub">All 6 data fields auto-load instantly.</p>
+          <div className="flex items-center gap-2">
+            <button className="rounded-lg bg-white/5 p-2 text-white/60 transition-colors hover:bg-white/10 hover:text-white lg:hidden">
+              <ChevronRight size={18} className="rotate-90" />
+            </button>
           </div>
-        )}
+        </div>
 
-        {loading&&<div className="aoi-loading"><Loader size={16} className="spin"/><span>Running satellite analysis…</span></div>}
-
-        {analysis&&!loading&&(
-          <>
-            <div className="aoi-alert-banner" style={{background:am.bg,borderColor:am.border}}>
-              <div className="aoi-alert-level" style={{color:am.color}}>{am.label}</div>
-              <div className="aoi-alert-desc">{analysis.summary}</div>
-            </div>
-
-            <div className="aoi-tabs">
-              <button className={`aoi-tab ${activeTab==='indices'?'active':''}`} onClick={()=>setActiveTab('indices')}>Indices</button>
-              <button className={`aoi-tab ${activeTab==='fields'?'active':''}`} onClick={()=>setActiveTab('fields')}>
-                All Fields {Object.values(loadingFields).some(Boolean)&&<Loader size={10} className="spin" style={{marginLeft:4}}/>}
-              </button>
-            </div>
-
-            {activeTab==='indices'&&(
-              <>
-                <div className="index-grid">
-                  {[
-                    {key:'ndvi',label:'NDVI',desc:'Vegetation',color:'#10b981',interpret:v=>v>0.6?'Dense':v>0.3?'Moderate':v>0.1?'Sparse':'Bare'},
-                    {key:'ndwi',label:'NDWI',desc:'Water',    color:'#3b82f6',interpret:v=>v>0.2?'Water body':v>0?'Moist':'Dry'},
-                    {key:'ndbi',label:'NDBI',desc:'Built-up', color:'#f59e0b',interpret:v=>v>0.2?'High urban':v>0?'Moderate':'Low'},
-                  ].map(({key,label,desc,color,interpret})=>(
-                    <div key={key} className="index-card" style={{borderTopColor:color}}>
-                      <div className="index-label" style={{color}}>{label}</div>
-                      <div className="index-value">{analysis[key]??'N/A'}</div>
-                      <div className="index-desc">{desc}</div>
-                      {analysis[key]!=null&&<div className="index-interpret" style={{color}}>{interpret(analysis[key])}</div>}
-                    </div>
-                  ))}
-                </div>
-                <div className="aoi-section-label" style={{marginTop:10}}>Live Conditions</div>
-                <div className="aoi-weather-row">
-                  {[{label:'Temp',value:`${analysis.temperature}°C`},{label:'Wind',value:`${analysis.wind_speed} km/h`},{label:'Precip',value:`${analysis.precipitation} mm`}].map(w=>(
-                    <div key={w.label} className="aoi-weather-chip">
-                      <span className="weather-chip-label">{w.label}</span>
-                      <span className="weather-chip-value">{w.value}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="aoi-source-note"><Info size={10}/>{(analysis.data_sources||[]).join(' · ')}</div>
-              </>
-            )}
-
-            {activeTab==='fields'&&(
-              <div className="fields-list">
-                {FIELD_META.map(({key,icon,label,color})=>(
-                  <div key={key} className="field-block" style={{borderLeftColor:color}}>
-                    <div className="field-block-header" style={{color}}>
-                      {icon}{label}
-                      {loadingFields[key]&&<Loader size={10} className="spin" style={{marginLeft:'auto'}}/>}
-                    </div>
-                    <div className="field-block-content">
-                      {loadingFields[key]?<span style={{color:'var(--text-dim)',fontSize:'0.73rem'}}>Fetching from backend…</span>
-                       :fieldData[key]?fieldData[key].split('\n').map((line,i,arr)=>(
-                           <span key={i}>{renderText(line)}{i<arr.length-1&&<br/>}</span>
-                         ))
-                       :<span style={{color:'var(--text-dim)',fontSize:'0.73rem'}}>Pending…</span>}
-                    </div>
-                  </div>
-                ))}
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto px-6 py-6 scrollbar-hide">
+          {!selected ? (
+            <div className="flex h-full flex-col items-center justify-center text-center">
+              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/5 text-white/20">
+                <Satellite size={32} />
               </div>
-            )}
+              <h3 className="mb-2 font-semibold text-white/80">No AOI Selected</h3>
+              <p className="max-w-[200px] text-xs leading-relaxed text-white/40">
+                Click anywhere on the map to analyze satellite indices and environmental risk factors.
+              </p>
+            </div>
+          ) : (
+            <div className="space-x-0 space-y-6">
+              {/* Alert Level Banner */}
+              <AnimatePresence mode="wait">
+                {analysis && (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className={cn("flex flex-col gap-2 rounded-2xl border p-4", alertMeta.bg, alertMeta.border)}
+                  >
+                    <div className="flex items-center gap-2">
+                      <ShieldAlert size={16} className={alertMeta.text} />
+                      <span className={cn("text-xs font-black uppercase tracking-widest", alertMeta.text)}>
+                        {alertMeta.label} Alert
+                      </span>
+                    </div>
+                    <p className="text-sm leading-relaxed text-white/80">{analysis.summary}</p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-            <div className="aoi-email-row">
-              <input className="aoi-email-input" type="email" placeholder="your@email.com for alerts" value={emailInput} onChange={e=>setEmailInput(e.target.value)}/>
-              <button className="aoi-email-btn" onClick={sendEmail} disabled={emailStatus==='sending'||!emailInput}>
-                {emailStatus==='sending'?<Loader size={13} className="spin"/>:<Mail size={13}/>}
+              {/* Parameter Cards Grid */}
+              <div className={cn(
+                "grid gap-4",
+                isExpanded ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5" : "grid-cols-1"
+              )}>
+                <PredictionCard 
+                  id="crop" 
+                  value={analysis?.domains?.crop_intelligence?.best_crop?.recommended_crop} 
+                  subValue={analysis?.domains?.crop_intelligence?.best_crop?.confidence ? `${(analysis.domains.crop_intelligence.best_crop.confidence * 100).toFixed(0)}% Confidence` : ""}
+                  loading={loading} 
+                />
+                <PredictionCard 
+                  id="drought" 
+                  value={analysis?.domains?.drought_monitoring?.category?.primary_category} 
+                  subValue={analysis?.domains?.drought_monitoring?.status?.is_drought ? "Active Warning" : "Stable"}
+                  loading={loading} 
+                />
+                <PredictionCard 
+                  id="disaster" 
+                  value={analysis?.domains?.weather_disaster?.event?.primary_event} 
+                  subValue={analysis?.domains?.weather_disaster?.intensity?.intensity_label ? `${analysis.domains.weather_disaster.intensity.intensity_label} Intensity` : ""}
+                  loading={loading} 
+                />
+                <PredictionCard 
+                  id="forest" 
+                  value={analysis?.domains?.forest_health?.alert?.deforestation_alert_label} 
+                  subValue={analysis?.domains?.forest_health?.future_ndvi?.future_ndvi_label ? `Future: ${analysis.domains.forest_health.future_ndvi.future_ndvi_label}` : ""}
+                  loading={loading} 
+                />
+                <PredictionCard 
+                  id="population" 
+                  value={analysis?.domains?.urban_growth?.population?.future_population_millions ? `${analysis.domains.urban_growth.population.future_population_millions}M` : ""} 
+                  subValue={analysis?.domains?.urban_growth?.growth?.future_growth_rate ? `${analysis.domains.urban_growth.growth.future_growth_rate} Growth` : ""}
+                  loading={loading} 
+                />
+              </div>
+
+              {/* Export Options */}
+              {analysis && !loading && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex gap-3"
+                >
+                  <button 
+                    onClick={downloadCSV}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-white/5 bg-white/5 px-4 py-3 text-xs font-bold uppercase tracking-wider text-white/80 transition-all hover:bg-white/10 hover:text-white"
+                  >
+                    <Download size={14} /> Download CSV
+                  </button>
+                  <button 
+                    onClick={downloadReport}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-white/5 bg-white/5 px-4 py-3 text-xs font-bold uppercase tracking-wider text-white/80 transition-all hover:bg-white/10 hover:text-white"
+                  >
+                    <Satellite size={14} /> Export Report
+                  </button>
+                </motion.div>
+              )}
+
+              {/* Secondary Data Grid */}
+              {analysis && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl border border-white/5 bg-white/5 p-3">
+                    <div className="mb-1 flex items-center gap-2 text-[10px] font-medium uppercase tracking-wider text-white/40">
+                      <Thermometer size={12} /> Temperature
+                    </div>
+                    <div className="text-xl font-bold">{analysis.inputs?.temperature}°C</div>
+                  </div>
+                  <div className="rounded-xl border border-white/5 bg-white/5 p-3">
+                    <div className="mb-1 flex items-center gap-2 text-[10px] font-medium uppercase tracking-wider text-white/40">
+                      <Wind size={12} /> Wind Speed
+                    </div>
+                    <div className="text-xl font-bold">{analysis.inputs?.wind_speed} km/h</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Action Footer */}
+        {selected && (
+          <div className="border-t border-white/5 bg-black/20 px-6 py-4">
+            <div className="flex gap-2">
+              <button 
+                onClick={() => runAnalysis(selected)}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-bold text-white transition-all hover:brightness-110 active:scale-95"
+              >
+                <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+                {loading ? "Analyzing..." : "Refresh Prediction"}
+              </button>
+              <button className="flex items-center justify-center rounded-xl bg-white/5 px-4 py-2.5 text-white/80 transition-all hover:bg-white/10">
+                <Download size={16} />
               </button>
             </div>
-            {emailStatus==='sent'   &&<div className="email-status ok">✓ Alert email sent!</div>}
-            {emailStatus==='failed' &&<div className="email-status err">✗ Failed — check SMTP secrets in HF Space.</div>}
-
-            <div className="aoi-actions">
-              <button className="aoi-btn primary" onClick={()=>selected&&runAnalysis(selected)} disabled={loading}><RefreshCw size={12}/> Re-analyse</button>
-              <button className="aoi-btn secondary" onClick={exportGeoJSON}><Download size={12}/> GeoJSON</button>
-              <button className="aoi-btn danger" onClick={()=>{drawnLyr.current?.clearLayers();if(pinMkr.current&&leafMap.current){leafMap.current.removeLayer(pinMkr.current);pinMkr.current=null;}setSelected(null);setAnalysis(null);setFieldData({});setAois([]);}}><Trash2 size={12}/> Clear</button>
-            </div>
-          </>
+          </div>
         )}
       </div>
     </div>

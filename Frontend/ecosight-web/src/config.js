@@ -1,14 +1,13 @@
-// src/config.js
-// Central place to configure your backend URL.
-// In production (Vercel), this points to your HF Space.
-// Locally, it points to uvicorn on port 8000.
+const IS_PROD = import.meta.env.PROD;
 
-const IS_PROD = import.meta.env.PROD; // true on Vercel build, false on npm run dev
+export const API_BASE = import.meta.env.VITE_API_BASE || (
+  IS_PROD ? 'https://geodrishti-geodrishti.hf.space' : 'http://127.0.0.1:8000'
+);
 
-export const API_BASE = IS_PROD
-  ? "https://geodrishti-geodrishti.hf.space"   // ← your HF Space URL
-  : "http://127.0.0.1:8000";
-
-// Usage in any component:
-//   import { API_BASE } from './config';
-//   fetch(`${API_BASE}/chat`, { ... })
+export const POWER_BI_EMBEDS = {
+  forest: import.meta.env.VITE_POWERBI_FOREST || '',
+  population: import.meta.env.VITE_POWERBI_POPULATION || '',
+  weather: import.meta.env.VITE_POWERBI_WEATHER || '',
+  crop: import.meta.env.VITE_POWERBI_CROP || '',
+  drought: import.meta.env.VITE_POWERBI_DROUGHT || '',
+};
